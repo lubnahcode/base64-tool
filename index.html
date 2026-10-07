@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Base64 Encoder / Decoder</title>
+  <style>
+    :root {
+      --bg: #0f1724;
+      --panel: #172236;
+      --border: #2a3a55;
+      --text: #e8eef8;
+      --muted: #8fa1bd;
+      --accent: #3ccfa4;
+      --accent-ink: #06231b;
+      --danger-bg: #3a1a22;
+      --danger-border: #b4475c;
+      --danger-text: #ffc9d3;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { margin: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.5;
+      padding: 32px 16px 64px;
+    }
+    main { max-width: 960px; margin: 0 auto; }
+    h1 { font-size: 1.9rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+    .lead { color: var(--muted); margin: 0 0 24px; }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    label, .label { font-weight: 600; font-size: 0.95rem; }
+    textarea {
+      width: 100%;
+      min-height: 200px;
+      resize: vertical;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+    textarea:focus-visible, button:focus-visible, input:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .row { display: flex; flex-wrap: wrap; gap: 8px; }
+    button, .file-btn {
+      font: inherit;
+      font-weight: 600;
+      border-radius: 8px;
+      padding: 8px 14px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary {
+      background: var(--accent);
+      color: var(--accent-ink);
+      border-color: var(--accent);
+    }
+    button.primary:hover { filter: brightness(1.08); }
+
+    .error {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: var(--danger-bg);
+      border: 1px solid var(--danger-border);
+      color: var(--danger-text);
+    }
+
+    .stretch { margin-top: 32px; }
+    .stretch h2 { font-size: 1.2rem; margin: 0 0 4px; }
+    .stretch .lead { margin-bottom: 12px; }
+    input[type="file"] { color: var(--muted); max-width: 100%; }
+    .preview {
+      max-width: 100%;
+      max-height: 240px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      align-self: flex-start;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Base64 Encoder / Decoder</h1>
+    <p class="lead">Encode text to Base64 or decode it back. Emoji and accents are supported.</p>
+
+    <div class="grid">
+      <section class="panel" aria-labelledby="text-label">
+        <label id="text-label" for="text">Text</label>
+        <textarea id="text" spellcheck="false" placeholder="Type or paste plain text here"></textarea>
+        <div class="row">
+          <button type="button" class="primary" id="encode-btn">Encode &rarr;</button>
+          <button type="button" data-copy="text">Copy text</button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="b64-label">
+        <label id="b64-label" for="b64">Base64</label>
+        <textarea id="b64" spellcheck="false" placeholder="Type or paste Base64 here"></textarea>
+        <div class="row">
+          <button type="button" class="primary" id="decode-btn">&larr; Decode</button>
+          <button type="button" data-copy="b64">Copy Base64</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="error" class="error" role="alert" hidden></div>
+
+    <section class="panel stretch" aria-labelledby="img-heading">
+      <div>
+        <h2 id="img-heading">Image to data URL</h2>
+        <p class="lead">Choose an image to get its Base64 data URL.</p>
+      </div>
+      <input type="file" id="image-input" accept="image/*" aria-label="Choose an image file">
+      <img id="preview" class="preview" alt="Preview of the chosen image" hidden>
+      <label for="data-url">Data URL</label>
+      <textarea id="data-url" readonly spellcheck="false" placeholder="The data URL appears here after you choose an image"></textarea>
+      <div class="row">
+        <button type="button" data-copy="data-url">Copy data URL</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var textEl = document.getElementById("text");
+      var b64El = document.getElementById("b64");
+      var errorEl = document.getElementById("error");
+      var dataUrlEl = document.getElementById("data-url");
+      var previewEl = document.getElementById("preview");
+
+      function showError(message) {
+        errorEl.textContent = message;
+        errorEl.hidden = false;
+      }
+
+      function clearError() {
+        errorEl.textContent = "";
+        errorEl.hidden = true;
+      }
+
+      // Text -> UTF-8 bytes -> binary string -> Base64
+      function encodeText(str) {
+        var bytes = new TextEncoder().encode(str);
+        var binary = "";
+        for (var i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+      }
+
+      // Base64 -> binary string -> bytes -> UTF-8 text. Throws Error with a readable message.
+      function decodeBase64(input) {
+        var clean = input.replace(/\s+/g, "");
+        if (clean === "") {
+          throw new Error("Nothing to decode. Paste some Base64 first.");
+        }
+        if (!/^[A-Za-z0-9+\/]*={0,2}$/.test(clean) || clean.length % 4 !== 0) {
+          throw new Error(
+            "Invalid Base64. Use only A-Z, a-z, 0-9, + and /, with = padding at the end if needed."
+          );
+        }
+        var binary;
+        try {
+          binary = atob(clean);
+        } catch (e) {
+          throw new Error("Invalid Base64. The text could not be decoded.");
+        }
+        var bytes = new Uint8Array(binary.length);
+        for (var i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        try {
+          return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        } catch (e) {
+          throw new Error(
+            "This is valid Base64, but it does not decode to UTF-8 text (it may be binary data such as an image)."
+          );
+        }
+      }
+
+      document.getElementById("encode-btn").addEventListener("click", function () {
+        clearError();
+        if (textEl.value === "") {
+          showError("Nothing to encode. Type some text first.");
+          return;
+        }
+        try {
+          b64El.value = encodeText(textEl.value);
+        } catch (e) {
+          showError("Could not encode this text.");
+        }
+      });
+
+      document.getElementById("decode-btn").addEventListener("click", function () {
+        clearError();
+        try {
+          textEl.value = decodeBase64(b64El.value);
+        } catch (e) {
+          showError(e.message);
+        }
+      });
+
+      // Copy buttons
+      function fallbackCopy(value) {
+        var temp = document.createElement("textarea");
+        temp.value = value;
+        temp.setAttribute("readonly", "");
+        temp.style.position = "fixed";
+        temp.style.opacity = "0";
+        document.body.appendChild(temp);
+        temp.select();
+        var ok = false;
+        try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+        document.body.removeChild(temp);
+        return ok;
+      }
+
+      function copyValue(value) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          return navigator.clipboard.writeText(value).then(
+            function () { return true; },
+            function () { return fallbackCopy(value); }
+          );
+        }
+        return Promise.resolve(fallbackCopy(value));
+      }
+
+      Array.prototype.forEach.call(document.querySelectorAll("[data-copy]"), function (btn) {
+        var originalLabel = btn.textContent;
+        var timer = null;
+        btn.addEventListener("click", function () {
+          var target = document.getElementById(btn.getAttribute("data-copy"));
+          if (!target.value) {
+            showError("Nothing to copy yet.");
+            return;
+          }
+          clearError();
+          copyValue(target.value).then(function (ok) {
+            if (!ok) {
+              showError("Copy failed. Select the text and copy it manually.");
+              return;
+            }
+            btn.textContent = "Copied!";
+            clearTimeout(timer);
+            timer = setTimeout(function () { btn.textContent = originalLabel; }, 1500);
+          });
+        });
+      });
+
+      // Stretch: image -> data URL
+      document.getElementById("image-input").addEventListener("change", function (event) {
+        clearError();
+        var file = event.target.files && event.target.files[0];
+        if (!file) { return; }
+        if (file.type.indexOf("image/") !== 0) {
+          showError("That file is not an image. Choose a PNG, JPG, GIF, WebP or SVG file.");
+          return;
+        }
+        var reader = new FileReader();
+        reader.onload = function () {
+          dataUrlEl.value = reader.result;
+          previewEl.src = reader.result;
+          previewEl.hidden = false;
+        };
+        reader.onerror = function () {
+          showError("Could not read that file.");
+        };
+        reader.readAsDataURL(file);
+      });
+    })();
+  </script>
+</body>
+</html>
